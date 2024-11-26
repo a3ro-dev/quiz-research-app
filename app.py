@@ -1,8 +1,10 @@
 import streamlit as st
 import atexit
+import os
+from datetime import datetime
+import html
 from PIL import ImageGrab  # Add this import
 import time  # Add this import
-import os  # Add this import
 import base64  # Add this import
 
 # Page Configuration must be first
@@ -419,20 +421,65 @@ if st.session_state.questions:
     with col3:
         if st.button("✅ Accept", key="accept", use_container_width=True):
             db.update_question_status(question['history_id'], "accepted")
-            st.write(f"Debug: Accepted Question - {question['question']}")  # Debug statement
-            # Take a screenshot of the question
-            screenshot = ImageGrab.grab()
+            
+            # Create HTML content with styling
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .container {{ max-width: 800px; margin: auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }}
+                .metadata {{ background-color: #f5f5f5; padding: 10px; border-radius: 5px; margin: 10px 0; }}
+                .question {{ font-size: 18px; margin: 15px 0; }}
+                .answer {{ color: #2e7d32; font-weight: bold; }}
+                .timestamp {{ color: #666; font-size: 12px; margin-top: 20px; }}
+            </style>
+            </head>
+            <body>
+            <div class="container">
+                <div class="metadata">
+                    <strong>Category:</strong> {html.escape(question.get('category', ''))}<br>
+                    <strong>Difficulty:</strong> {html.escape(question.get('difficulty', '').capitalize())}<br>
+                    <strong>Type:</strong> {html.escape(question.get('type', '').capitalize())}
+                </div>
+                <div class="question">
+                    <strong>Question:</strong> {html.escape(question['question'])}
+                </div>
+                <div class="answer">
+                    <strong>Correct Answer:</strong> {html.escape(question['correct_answer'])}
+                </div>
+                <div class="options">
+                    <strong>Options:</strong>
+                    <ul>
+                        {''.join([f"<li>{html.escape(opt)}</li>" for opt in options])}
+                    </ul>
+                </div>
+                <div class="timestamp">
+                    Captured on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                </div>
+            </div>
+            </body>
+            </html>
+            """
+            
+            # Save HTML file
             screenshot_dir = "screenshots"
-            os.makedirs(screenshot_dir, exist_ok=True)  # Ensure the directory exists
-            screenshot_path = os.path.join(screenshot_dir, f"question_{question['history_id']}.png")
-            screenshot.save(screenshot_path)
-            st.write(f"Screenshot saved to {screenshot_path}")
-            # Automatically start the download
-            with open(screenshot_path, "rb") as file:
-                base64_image = base64.b64encode(file.read()).decode()
-                href = f'<a href="data:image/png;base64,{base64_image}" download="question_{question['history_id']}.png"></a>'
-                st.markdown(href, unsafe_allow_html=True)
-                st.markdown(f'<script>document.querySelector("a").click();</script>', unsafe_allow_html=True)
+            os.makedirs(screenshot_dir, exist_ok=True)
+            html_path = os.path.join(screenshot_dir, f"question_{question['history_id']}.html")
+            
+            with open(html_path, "w", encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # Create download button for HTML
+            with open(html_path, "rb") as file:
+                st.download_button(
+                    label="Download Question Details",
+                    data=file,
+                    file_name=f"question_{question['history_id']}.html",
+                    mime="text/html"
+                )
+                
             st.session_state.questions.pop(st.session_state.current_question)
             if st.session_state.current_question >= len(st.session_state.questions):
                 st.session_state.current_question = max(0, len(st.session_state.questions) - 1)
@@ -474,18 +521,20 @@ if st.sidebar.button("Show History"):
             st.write(f"📌 **Category:** {q.get('category')}")
             st.write(q['question'])
             st.write(f"💡 **Answer:** {q['correct_answer']}")
-            screenshot_path = f"screenshots/question_{q['id']}.png"
-            if os.path.exists(screenshot_path):
-                st.image(screenshot_path, caption=f"Screenshot of Question {q['id']}")
-                with open(screenshot_path, "rb") as file:
-                    btn = st.download_button(
-                        label="Download Screenshot",
+            html_path = f"screenshots/question_{q['id']}.html"
+            if os.path.exists(html_path):
+                with open(html_path, "rb") as file:
+                    st.download_button(
+                        label="Download Question Details",
                         data=file,
-                        file_name=f"question_{q['id']}.png",
-                        mime="image/png"
+                        file_name=f"question_{q['id']}.html",
+                        mime="text/html",
+                        key=f"download_{q['id']}"
                     )
             if st.button("❌ Remove", key=f"remove_{q['id']}"):
-                db.update_question_status(q['id'], "rejected")  # Use the history_id
+                db.update_question_status(q['id'], "rejected")
+                if os.path.exists(html_path):
+                    os.remove(html_path)
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
